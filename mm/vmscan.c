@@ -1053,13 +1053,17 @@ unsigned long shrink_slab(gfp_t gfp_mask, int nid,
 				ret = 0;
 			freed += ret;
 
-			down_read(&shrinker_rwsem);
+			if (!down_read_trylock(&shrinker_rwsem)) {
+				up_read(&shrinker->del_rwsem);
+				goto out;
+			}
 			up_read(&shrinker->del_rwsem);
 		}
 
 		up_read(&shrinker_rwsem);
 	}
 
+out:
 	cond_resched();
 	return freed;
 }
