@@ -213,6 +213,7 @@ static void set_task_reclaim_state(struct task_struct *task,
 static LIST_HEAD(shrinker_list);
 static DEFINE_SPINLOCK(shrinker_lock);
 static DEFINE_RWLOCK(shrinker_rwlock);
+static DECLARE_RWSEM(shrinker_rwsem);
 
 #ifdef CONFIG_MEMCG
 static int shrinker_nr_max;
@@ -784,11 +785,15 @@ void unregister_shrinker(struct shrinker *shrinker)
 	write_lock(&shrinker_rwlock);
 	list_del(&shrinker->list);
 	shrinker->flags &= ~SHRINKER_REGISTERED;
-	if (shrinker->flags & SHRINKER_MEMCG_AWARE)
-		unregister_memcg_shrinker(shrinker);
 	debugfs_entry = shrinker_debugfs_remove(shrinker);
 	write_unlock(&shrinker_rwlock);
 	spin_unlock(&shrinker_lock);
+
+	if (shrinker->flags & SHRINKER_MEMCG_AWARE) {
+		down_write(&shrinker_rwsem);
+		unregister_memcg_shrinker(shrinker);
+		up_write(&shrinker_rwsem);
+	}
 	up_write(&shrinker->del_rwsem);
 
 	debugfs_remove_recursive(debugfs_entry);
