@@ -211,8 +211,6 @@ static void set_task_reclaim_state(struct task_struct *task,
 }
 
 static LIST_HEAD(shrinker_list);
-static DEFINE_SPINLOCK(shrinker_lock);
-static DEFINE_RWLOCK(shrinker_rwlock);
 static DECLARE_RWSEM(shrinker_rwsem);
 
 #ifdef CONFIG_MEMCG
@@ -720,12 +718,12 @@ void free_prealloced_shrinker(struct shrinker *shrinker)
 void register_shrinker_prepared(struct shrinker *shrinker)
 {
 	init_rwsem(&shrinker->del_rwsem);
-	spin_lock(&shrinker_lock);
+	down_write(&shrinker_rwsem);
 	/* Use the RCU list mutation primitive to allow concurrent iteration */
 	list_add_tail_rcu(&shrinker->list, &shrinker_list);
 	shrinker->flags |= SHRINKER_REGISTERED;
 	shrinker_debugfs_add(shrinker);
-	spin_unlock(&shrinker_lock);
+	up_write(&shrinker_rwsem);
 }
 
 static int __register_shrinker(struct shrinker *shrinker)
@@ -781,19 +779,11 @@ void unregister_shrinker(struct shrinker *shrinker)
 	 * Wait until the shrinker list is no longer in use (shrinker_rwlock)
 	 */
 	down_write(&shrinker->del_rwsem);
-	spin_lock(&shrinker_lock);
-	write_lock(&shrinker_rwlock);
-	list_del(&shrinker->list);
+	down_write(&shrinker_rwsem);
+	list_del_rcu(&shrinker->list);
 	shrinker->flags &= ~SHRINKER_REGISTERED;
 	debugfs_entry = shrinker_debugfs_remove(shrinker);
-	write_unlock(&shrinker_rwlock);
-	spin_unlock(&shrinker_lock);
-
-	if (shrinker->flags & SHRINKER_MEMCG_AWARE) {
-		down_write(&shrinker_rwsem);
-		unregister_memcg_shrinker(shrinker);
-		up_write(&shrinker_rwsem);
-	}
+	up_write(&shrinker_rwsem);
 	up_write(&shrinker->del_rwsem);
 
 	debugfs_remove_recursive(debugfs_entry);
@@ -1045,28 +1035,30 @@ unsigned long shrink_slab(gfp_t gfp_mask, int nid,
 	if (!mem_cgroup_disabled() && !mem_cgroup_is_root(memcg))
 		return shrink_slab_memcg(gfp_mask, nid, memcg, priority);
 
-	read_lock(&shrinker_rwlock);
-	/* Use the RCU list iteration primitive to allow concurrent additions */
-	list_for_each_entry_rcu(shrinker, &shrinker_list, list) {
-		struct shrink_control sc = {
-			.gfp_mask = gfp_mask,
-			.nid = nid,
-			.memcg = memcg,
-		};
+	if (down_read_trylock(&shrinker_rwsem)) {
+		/* Use the RCU list iteration primitive to allow concurrent additions */
+		list_for_each_entry_rcu(shrinker, &shrinker_list, list) {
+			struct shrink_control sc = {
+				.gfp_mask = gfp_mask,
+				.nid = nid,
+				.memcg = memcg,
+			};
 
-		if (!down_read_trylock(&shrinker->del_rwsem))
-			continue;
-		read_unlock(&shrinker_rwlock);
+			if (!down_read_trylock(&shrinker->del_rwsem))
+				continue;
+			up_read(&shrinker_rwsem);
 
-		ret = do_shrink_slab(&sc, shrinker, priority);
-		if (ret == SHRINK_EMPTY)
-			ret = 0;
-		freed += ret;
+			ret = do_shrink_slab(&sc, shrinker, priority);
+			if (ret == SHRINK_EMPTY)
+				ret = 0;
+			freed += ret;
 
-		read_lock(&shrinker_rwlock);
-		up_read(&shrinker->del_rwsem);
+			down_read(&shrinker_rwsem);
+			up_read(&shrinker->del_rwsem);
+		}
+
+		up_read(&shrinker_rwsem);
 	}
-	read_unlock(&shrinker_rwlock);
 
 	cond_resched();
 	return freed;
