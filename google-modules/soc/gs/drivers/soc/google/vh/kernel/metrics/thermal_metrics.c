@@ -382,7 +382,10 @@ tr_handle register_temp_residency_stats(const char *name, char *group_name)
 	set_residency_thresholds(instance, default_thresholds);
 	stats->started = false;
 	stats->use_callback = false;
-	stats->ops = (struct temp_residency_stats_callbacks){NULL, NULL, NULL, NULL};
+	stats->ops = (struct temp_residency_stats_callbacks){.set_thresholds = NULL,
+								     .get_thresholds = NULL,
+								     .get_stats = NULL,
+								     .reset_stats = NULL};
 
 	thermal_group = create_thermal_group(group_name);
 	if (!thermal_group)
@@ -422,7 +425,10 @@ int unregister_temp_residency_stats(tr_handle instance)
 	stats = &residency_stat_array[instance];
 	strncpy(stats->name, "", THERMAL_NAME_LENGTH);
 	set_residency_thresholds(instance, default_thresholds);
-	stats->ops = (struct temp_residency_stats_callbacks){NULL, NULL, NULL, NULL};
+	stats->ops = (struct temp_residency_stats_callbacks){.set_thresholds = NULL,
+								     .get_thresholds = NULL,
+								     .get_stats = NULL,
+								     .reset_stats = NULL};
 	stats->use_callback = false;
 	return 0;
 }
