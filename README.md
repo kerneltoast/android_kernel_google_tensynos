@@ -148,3 +148,32 @@ a maintainer tree)
     - tag the patch subject with `ANDROID:`
     - add a `Bug:` tag with the Android bug (required for android-specific features)
 
+---
+
+## NetHunter for Pixel 9 Pro Fold (`comet`)
+
+This branch includes support for building a Kali NetHunter kernel for the Google Pixel 9 Pro Fold (Tensor G4, codename `comet`).
+
+### Quick Start: `nethunter-launch.sh`
+
+An interactive launcher script is included for managing NetHunter on the device:
+
+```bash
+./nethunter-launch.sh              # Interactive menu
+./nethunter-launch.sh check        # Verify kernel, root, app, chroot
+./nethunter-launch.sh launch       # Start NetHunter app via ADB
+./nethunter-launch.sh chroot       # Enter Kali chroot with auto-mounts
+./nethunter-launch.sh flash        # Flash AnyKernel zip to both A/B slots
+./nethunter-launch.sh recovery     # Reboot to TWRP
+./nethunter-launch.sh fastboot     # Reboot to bootloader
+```
+
+### Building the Kernel
+
+```bash
+cd kali-nethunter-kernel-builder
+./build.sh
+# Select N (NetHunter build) or T (AnyKernel test build)
+```
+
+See `NET-HUNTER-PIXEL-9-PRO-FOLD-GUIDE.md` for the complete setup guide.
